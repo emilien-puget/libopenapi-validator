@@ -144,6 +144,40 @@ func TestDefaultPatternCompileCache(t *testing.T) {
 	assert.Equal(t, res.String(), DefaultPatternRegexString)
 }
 
+func TestGetRegexForPathReturnsCachedRegex(t *testing.T) {
+	first, errFirst := GetRegexForPath("/cache-check/{id}")
+	second, errSecond := GetRegexForPath("/cache-check/{id}")
+
+	assert.NoError(t, errFirst)
+	assert.NoError(t, errSecond)
+	// the same compiled regex comes back for the same template
+	assert.True(t, first == second, "expected the cached regex pointer for repeated calls")
+}
+
+func TestGetRegexForPathDoesNotCacheErrors(t *testing.T) {
+	bad := "/cache-check/{:broken}"
+
+	_, errFirst := GetRegexForPath(bad)
+	_, errSecond := GetRegexForPath(bad)
+
+	// invalid templates stay uncached: every call reports the error again
+	assert.Error(t, errFirst)
+	assert.Error(t, errSecond)
+	assert.Equal(t, errFirst.Error(), errSecond.Error())
+}
+
+func TestClearRegexCache(t *testing.T) {
+	before, errBefore := GetRegexForPath("/cache-clear/{id}")
+	assert.NoError(t, errBefore)
+
+	ClearRegexCache()
+
+	after, errAfter := GetRegexForPath("/cache-clear/{id}")
+	assert.NoError(t, errAfter)
+	// the cleared entry is gone: this call compiled a new regex
+	assert.True(t, before != after, "expected a fresh regex after ClearRegexCache")
+}
+
 func equal(a, b []int) bool {
 	if len(a) != len(b) {
 		return false

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var (
@@ -12,6 +13,26 @@ var (
 	DefaultPatternRegex       = regexp.MustCompile("^([^/]*)$")
 	DefaultPatternRegexString = DefaultPatternRegex.String()
 )
+
+// regexCache stores compiled regular expressions by path template.
+//
+// Request validation calls GetRegexForPath for each path template on every
+// request. The key set is the route table of the document, which is small and
+// stable for the life of the process, so the cache holds one entry per unique
+// template. Each entry holds a few KB (key string plus compiled regex), so a
+// normal route table costs a few MB at most. Callers that pass an unbounded
+// number of unique templates grow the cache without limit.
+//
+// ClearRegexCache empties the cache. Call it between document lifecycles in
+// long-running processes to bound memory.
+var regexCache sync.Map // map[string]*regexp.Regexp
+
+// ClearRegexCache removes every cached compiled regex. The next call for a
+// template compiles it again. Safe to call while other goroutines call
+// GetRegexForPath.
+func ClearRegexCache() {
+	regexCache.Clear()
+}
 
 // GetRegexForPath returns a compiled regular expression for the given path template.
 //
@@ -26,6 +47,11 @@ var (
 // The function ensures that the template is well-formed, with balanced and properly
 // nested braces. If the template is invalid, an error is returned.
 //
+// Compiled regexes are cached by template string. The first call for a template
+// compiles it; later calls return the cached regex. The cache is safe for
+// concurrent use. Invalid templates are not cached. ClearRegexCache empties
+// the cache.
+//
 // Parameters:
 //   - tpl: The path template string to convert into a regular expression.
 //
@@ -39,6 +65,25 @@ var (
 //	// regex: ^/orders/([0-9]+)/items/([^/]+)$
 //	// err: nil
 func GetRegexForPath(tpl string) (*regexp.Regexp, error) {
+	// Return the cached regex for this template when one exists.
+	if cached, ok := regexCache.Load(tpl); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+
+	reg, errCompile := compileRegexForPath(tpl)
+	if errCompile != nil {
+		return nil, errCompile
+	}
+
+	// A concurrent call for the same template may have stored its regex first.
+	// LoadOrStore returns the stored winner; this call discards its own copy.
+	actual, _ := regexCache.LoadOrStore(tpl, reg)
+	return actual.(*regexp.Regexp), nil
+}
+
+// compileRegexForPath builds and compiles a regular expression for the given
+// path template. It holds the original, uncached implementation.
+func compileRegexForPath(tpl string) (*regexp.Regexp, error) {
 	// Check if it is well-formed.
 	idxs, errBraces := BraceIndices(tpl)
 	if errBraces != nil {
