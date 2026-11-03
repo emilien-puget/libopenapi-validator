@@ -31,6 +31,10 @@ paths:
       responses:
         '200':
           description: ok
+          headers:
+            X-Trace-Id:
+              schema:
+                type: string
   /orders/{orderId}/items/{itemId}:
     get:
       parameters:
@@ -134,6 +138,30 @@ func BenchmarkValidateHttpRequestSyncPathQueryHeader(b *testing.B) {
 		valid, validationErrors := v.ValidateHttpRequestSync(req)
 		if !valid {
 			b.Fatalf("request should validate, got %d errors", len(validationErrors))
+		}
+	}
+}
+
+// BenchmarkValidateHttpResponse measures one valid 200 response for the
+// /users/{id} operation: routing, response headers and response body
+// validation.
+func BenchmarkValidateHttpResponse(b *testing.B) {
+	v := prepareRequestBenchValidator(b)
+	req := benchRequest(b, http.MethodGet, "/users/3f2504e0-4f89-11d3-9a0c-0305e82c3301", nil)
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"X-Trace-Id": []string{"3f2504e0-4f89-11d3-9a0c-0305e82c3301"}},
+			Body:       http.NoBody,
+		}
+
+		valid, validationErrors := v.ValidateHttpResponse(req, resp)
+		if !valid {
+			b.Fatalf("response should validate, got %d errors", len(validationErrors))
 		}
 	}
 }
