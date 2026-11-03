@@ -161,7 +161,7 @@ func (v *responseBodyValidator) checkResponseSchema(
 		}
 		_, bodyErrors := ValidateResponseSchema(&ValidateResponseSchemaInput{
 			Request: request, Response: validationResponse, Schema: schema,
-			Version: helpers.VersionToFloat(v.document.Version), Options: []config.Option{config.WithExistingOpts(v.options)},
+			Version: helpers.VersionToFloat(v.document.Version), ValidationOptions: v.options,
 		})
 		return bodyErrors
 	}
@@ -209,14 +209,14 @@ func (v *responseBodyValidator) checkResponseSchema(
 
 	// Validate response schema
 	valid, vErrs := ValidateResponseSchema(&ValidateResponseSchemaInput{
-		Request:      request,
-		Response:     response,
-		Schema:       schema,
-		Version:      helpers.VersionToFloat(v.document.Version),
-		Options:      []config.Option{config.WithExistingOpts(v.options)},
-		DecodedValue: decodedValue,
-		RawBody:      responseBody,
-		ValueDecoded: decoded,
+		Request:           request,
+		Response:          response,
+		Schema:            schema,
+		Version:           helpers.VersionToFloat(v.document.Version),
+		ValidationOptions: v.options,
+		DecodedValue:      decodedValue,
+		RawBody:           responseBody,
+		ValueDecoded:      decoded,
 	})
 
 	if !valid {
