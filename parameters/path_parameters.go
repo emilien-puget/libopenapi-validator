@@ -115,7 +115,7 @@ func (v *paramValidator) ValidatePathParamsWithPathItem(request *http.Request, p
 				matches = matches[1:]
 
 				// Check if it is well-formed.
-				idxs, errBraces := helpers.BraceIndices(pathSegments[x])
+				idxs, errBraces := helpers.GetBraceIndicesForPath(pathSegments[x])
 				if errBraces != nil {
 					continue
 				}

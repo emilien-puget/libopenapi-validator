@@ -178,6 +178,29 @@ func TestClearRegexCache(t *testing.T) {
 	assert.True(t, before != after, "expected a fresh regex after ClearRegexCache")
 }
 
+func TestGetBraceIndicesForPath(t *testing.T) {
+	tpl := "/orders/{id:[0-9]+}/items/{itemId}"
+
+	want, errWant := BraceIndices(tpl)
+	assert.NoError(t, errWant)
+
+	first, errFirst := GetBraceIndicesForPath(tpl)
+	second, errSecond := GetBraceIndicesForPath(tpl)
+
+	assert.NoError(t, errFirst)
+	assert.NoError(t, errSecond)
+	assert.Equal(t, want, first)
+	// the same cached indices come back for the same template
+	assert.True(t, &first[0] == &second[0], "expected the cached indices slice for repeated calls")
+}
+
+func TestGetBraceIndicesForPathInvalidTemplate(t *testing.T) {
+	idxs, err := GetBraceIndicesForPath("/orders/{id")
+
+	assert.Nil(t, idxs)
+	assert.Error(t, err)
+}
+
 func equal(a, b []int) bool {
 	if len(a) != len(b) {
 		return false

@@ -67,27 +67,52 @@ func ClearRegexCache() {
 func GetRegexForPath(tpl string) (*regexp.Regexp, error) {
 	// Return the cached regex for this template when one exists.
 	if cached, ok := regexCache.Load(tpl); ok {
-		return cached.(*regexp.Regexp), nil
+		return cached.(pathRegexEntry).regex, nil
 	}
 
-	reg, errCompile := compileRegexForPath(tpl)
+	entry, errCompile := compilePathRegexEntry(tpl)
 	if errCompile != nil {
 		return nil, errCompile
 	}
 
-	// A concurrent call for the same template may have stored its regex first.
+	// A concurrent call for the same template may have stored its entry first.
 	// LoadOrStore returns the stored winner; this call discards its own copy.
-	actual, _ := regexCache.LoadOrStore(tpl, reg)
-	return actual.(*regexp.Regexp), nil
+	actual, _ := regexCache.LoadOrStore(tpl, entry)
+	return actual.(pathRegexEntry).regex, nil
 }
 
-// compileRegexForPath builds and compiles a regular expression for the given
+// GetBraceIndicesForPath returns the brace indices of the given path template,
+// the same values BraceIndices computes. The indices come from the compile
+// cache, so repeated calls for one template do not re-scan it. Callers must
+// treat the returned slice as read-only. An invalid template returns an error.
+func GetBraceIndicesForPath(tpl string) ([]int, error) {
+	if cached, ok := regexCache.Load(tpl); ok {
+		return cached.(pathRegexEntry).braceIdxs, nil
+	}
+
+	entry, errCompile := compilePathRegexEntry(tpl)
+	if errCompile != nil {
+		return nil, errCompile
+	}
+
+	actual, _ := regexCache.LoadOrStore(tpl, entry)
+	return actual.(pathRegexEntry).braceIdxs, nil
+}
+
+// pathRegexEntry holds one compile result for a path template: the compiled
+// regex and the brace indices of the template placeholders.
+type pathRegexEntry struct {
+	regex     *regexp.Regexp
+	braceIdxs []int
+}
+
+// compilePathRegexEntry builds and compiles a regular expression for the given
 // path template. It holds the original, uncached implementation.
-func compileRegexForPath(tpl string) (*regexp.Regexp, error) {
+func compilePathRegexEntry(tpl string) (pathRegexEntry, error) {
 	// Check if it is well-formed.
 	idxs, errBraces := BraceIndices(tpl)
 	if errBraces != nil {
-		return nil, errBraces
+		return pathRegexEntry{}, errBraces
 	}
 
 	// Backup the original.
@@ -110,13 +135,13 @@ func compileRegexForPath(tpl string) (*regexp.Regexp, error) {
 
 		// Name or pattern can't be empty.
 		if name == "" || patt == "" {
-			return nil, fmt.Errorf("missing name or pattern in %q", tpl[idxs[i]:end])
+			return pathRegexEntry{}, fmt.Errorf("missing name or pattern in %q", tpl[idxs[i]:end])
 		}
 
 		// Build the regexp pattern.
 		_, err := fmt.Fprintf(pattern, "%s(%s)", regexp.QuoteMeta(raw), patt)
 		if err != nil {
-			return nil, err
+			return pathRegexEntry{}, err
 		}
 
 	}
@@ -130,22 +155,22 @@ func compileRegexForPath(tpl string) (*regexp.Regexp, error) {
 	patternString := pattern.String()
 
 	if patternString == DefaultPatternRegexString {
-		return DefaultPatternRegex, nil
+		return pathRegexEntry{regex: DefaultPatternRegex, braceIdxs: idxs}, nil
 	}
 
 	// Compile full regexp.
 	reg, errCompile := regexp.Compile(patternString)
 	if errCompile != nil {
-		return nil, errCompile
+		return pathRegexEntry{}, errCompile
 	}
 
 	// Check for capturing groups which used to work in older versions
 	if reg.NumSubexp() != len(idxs)/2 {
-		return nil, fmt.Errorf("route %s contains capture groups in its regexp. Only non-capturing groups are accepted: e.g. (?:pattern) instead of (pattern)", template)
+		return pathRegexEntry{}, fmt.Errorf("route %s contains capture groups in its regexp. Only non-capturing groups are accepted: e.g. (?:pattern) instead of (pattern)", template)
 	}
 
 	// Done!
-	return reg, nil
+	return pathRegexEntry{regex: reg, braceIdxs: idxs}, nil
 }
 
 // BraceIndices returns the indices of the opening and closing braces in a string.
