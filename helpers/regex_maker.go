@@ -1,7 +1,6 @@
 package helpers
 
 import (
-	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
@@ -118,7 +117,11 @@ func compilePathRegexEntry(tpl string) (pathRegexEntry, error) {
 	// Backup the original.
 	template := tpl
 
-	pattern := bytes.NewBufferString("^")
+	// bytes.Buffer and strings.Builder writes cannot fail: the buffer grows
+	// on demand and panics on overflow instead of returning an error, so the
+	// pattern is assembled with plain writes and no error checks.
+	var pattern strings.Builder
+	pattern.WriteString("^")
 	var end int
 
 	for i := 0; i < len(idxs); i += 2 {
@@ -139,10 +142,10 @@ func compilePathRegexEntry(tpl string) (pathRegexEntry, error) {
 		}
 
 		// Build the regexp pattern.
-		_, err := fmt.Fprintf(pattern, "%s(%s)", regexp.QuoteMeta(raw), patt)
-		if err != nil {
-			return pathRegexEntry{}, err
-		}
+		pattern.WriteString(regexp.QuoteMeta(raw))
+		pattern.WriteByte('(')
+		pattern.WriteString(patt)
+		pattern.WriteByte(')')
 
 	}
 
