@@ -212,3 +212,16 @@ func equal(a, b []int) bool {
 	}
 	return true
 }
+
+func TestGetRegexForPathInvalidCustomPattern(t *testing.T) {
+	// an unterminated character class fails regexp compilation
+	_, err := GetRegexForPath("/x/{id:[a-z}")
+	assert.Error(t, err)
+}
+
+func TestGetRegexForPathCapturingGroupRejected(t *testing.T) {
+	// capturing groups in custom patterns are rejected
+	_, err := GetRegexForPath("/x/{id:(abc)}")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "capture groups")
+}
