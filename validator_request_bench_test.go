@@ -13,7 +13,8 @@ import (
 )
 
 // requestBenchSpec holds the happy-path shapes a gateway validates: a single
-// path parameter, several parameters of mixed locations, and a JSON body.
+// path parameter, several parameters of mixed locations, a JSON body, a
+// query-heavy search operation, and an operation with enum parameters.
 const requestBenchSpec = `openapi: 3.1.0
 info:
   title: bench
@@ -76,6 +77,37 @@ paths:
               properties:
                 name:
                   type: string
+      responses:
+        '200':
+          description: ok
+  /search:
+    get:
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, all]
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: X-Channel
+          in: header
+          schema:
+            type: string
+            enum: [web, mobile]
       responses:
         '200':
           description: ok
@@ -184,4 +216,58 @@ func BenchmarkValidateHttpRequestSyncJSONBody(b *testing.B) {
 			b.Fatalf("request should validate, got %d errors", len(validationErrors))
 		}
 	}
+}
+
+// BenchmarkValidateHttpRequestSyncQuery measures one valid GET with four query
+// parameters and an enum header parameter, the query-heavy gateway shape.
+func BenchmarkValidateHttpRequestSyncQuery(b *testing.B) {
+	v := prepareRequestBenchValidator(b)
+	req := benchRequest(b, http.MethodGet, "/search?q=burger&limit=10&status=closed&sort=price", nil)
+	req.Header.Set("X-Channel", "web")
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		valid, validationErrors := v.ValidateHttpRequestSync(req)
+		if !valid {
+			b.Fatalf("request should validate, got %d errors", len(validationErrors))
+		}
+	}
+}
+
+// BenchmarkValidateHttpRequestSyncInvalid measures one invalid GET: the
+// orderId path parameter fails its integer schema. Validation reports errors,
+// so this shape carries the error-construction cost by design.
+func BenchmarkValidateHttpRequestSyncInvalidParam(b *testing.B) {
+	v := prepareRequestBenchValidator(b)
+	req := benchRequest(b, http.MethodGet, "/orders/not-a-number/items/AB1234?status=closed", nil)
+	req.Header.Set("X-Request-Id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		valid, validationErrors := v.ValidateHttpRequestSync(req)
+		if valid || len(validationErrors) == 0 {
+			b.Fatalf("request should fail validation with errors, got valid=%v errors=%d", valid, len(validationErrors))
+		}
+	}
+}
+
+// BenchmarkValidateHttpRequestSyncParallel runs the plain GET shape from many
+// goroutines: a gateway shares the validator and its caches across requests.
+func BenchmarkValidateHttpRequestSyncParallel(b *testing.B) {
+	v := prepareRequestBenchValidator(b)
+
+	b.ReportAllocs()
+
+	req := benchRequest(b, http.MethodGet, "/users/3f2504e0-4f89-11d3-9a0c-0305e82c3301", nil)
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			valid, validationErrors := v.ValidateHttpRequestSync(req)
+			if !valid {
+				b.Fatalf("request should validate, got %d errors", len(validationErrors))
+			}
+		}
+	})
 }
