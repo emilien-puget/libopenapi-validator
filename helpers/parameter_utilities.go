@@ -29,7 +29,11 @@ type QueryParam struct {
 
 // ExtractRawQueryValues parses a URL's RawQuery into a map of decoded key to raw
 // (still percent-encoded) values, index-aligned per key with request.URL.Query().
+// A query without parameters returns nil.
 func ExtractRawQueryValues(rawQuery string) map[string][]string {
+	if rawQuery == "" {
+		return nil
+	}
 	rawValues := make(map[string][]string)
 	for rawQuery != "" {
 		var segment string
